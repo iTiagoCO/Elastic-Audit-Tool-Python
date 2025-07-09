@@ -1,9 +1,19 @@
-## ✨ ¿Qué puedes hacer con esta herramienta?
+# Elastic Pro Audit Tool
+
+Una herramienta de auditoría y diagnóstico para Elasticsearch a nivel de experto, directamente en tu terminal.
+
+Este proyecto nació de la necesidad de tener una forma rápida y eficiente de diagnosticar problemas en clústeres de Elasticsearch sin tener que navegar por múltiples dashboards o encadenar interminables llamadas a la API. `elastic-pro-audit-tool` centraliza las métricas más críticas en una interfaz de línea de comandos (CLI) interactiva, diseñada para ir directo al grano y encontrar la causa raíz de los problemas.
+
+![Demo del Dashboard](render1752100480123.gif)
+
+---
+
+## ✨ Características Principales
 
 El objetivo no es solo mostrar datos, sino darte insights accionables para resolver problemas reales.
 
 * **📈 Dashboard General en Vivo**: Obtén una vista de 360° del estado del clúster, la salud de los nodos agrupados por `tier` y rankings de los índices más activos, todo actualizado en tiempo real.
-* **🔀 Análisis de Desbalance de Shards**: Diagnostica "hotspots" de indexación al instante. La herramienta te muestra qué patrones de índice están sobrecargando nodos específicos y, más importante aún, lo correlaciona con la **carga de escrituras y búsquedas** para que sepas qué desbalances son realmente críticos.
+* **🔀 Análisis de Desbalance de Shards**: Diagnostica "hotspots" de indexación al instante. La herramienta te muestra qué patrones de índice están sobrecargando nodos específicos y lo correlaciona con la **carga de escrituras y búsquedas** para que sepas qué desbalances son realmente críticos.
 * **⚡ Análisis de Carga de Nodos**: Entiende *por qué* un nodo está lento. Esta vista correlaciona la CPU y el Heap del nodo con la carga de trabajo (docs/s y req/s) que sus shards están generando.
 * **🔬 Diagnóstico Profundo de Nodos**: Sumérgete en los `thread pools` y `circuit breakers` de cada nodo para encontrar cuellos de botella y peticiones rechazadas en el nivel más bajo.
 * **📝 Revisión Proactiva de Plantillas**: Analiza tus plantillas de índice en busca de malas prácticas (como un número de shards demasiado alto o la falta de políticas de ciclo de vida) antes de que se conviertan en un problema.
@@ -14,6 +24,7 @@ El objetivo no es solo mostrar datos, sino darte insights accionables para resol
 ## 🚀 Puesta en Marcha
 
 ### Prerrequisitos
+
 * Python 3.8+
 * pip
 
@@ -32,24 +43,16 @@ El objetivo no es solo mostrar datos, sino darte insights accionables para resol
     ```
 
 3.  **Instala las dependencias:**
-    Crea un archivo `requirements.txt` con el siguiente contenido:
-    ```txt
-    requests
-    rich
-    pandas
-    python-dotenv
-    ```
-    Y luego instálalo:
     ```bash
     pip install -r requirements.txt
     ```
 
 4.  **Configura tus credenciales:**
-    Copia el archivo de ejemplo `.env.example` para crear tu propia configuración.
+    Copia el archivo de ejemplo `.env.example` (si lo tienes) o crea un archivo `.env` en la raíz del proyecto.
     ```bash
-    cp .env.example .env
+    # Ejemplo: cp .env.example .env
     ```
-    Abre el archivo `.env` y añade los datos de conexión a tu clúster.
+    Luego, edita el archivo `.env` con los datos de tu clúster.
 
 ---
 
