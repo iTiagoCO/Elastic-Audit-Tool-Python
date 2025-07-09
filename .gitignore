@@ -1,0 +1,20 @@
+# Archivos de entorno con secretos y credenciales
+.env
+
+# Entorno virtual de Python
+/env/
+/venv/
+
+# Archivos de log y datos generados por el script
+audit_debug.log
+snapshots/
+
+# Caché de Python y archivos compilados
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Configuración específica del editor de código (opcional pero recomendado)
+.vscode/
+.idea/
