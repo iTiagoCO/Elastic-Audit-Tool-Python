@@ -2,13 +2,14 @@
 import argparse
 import webbrowser
 from threading import Timer
+import sys
 
 def run_tui():
     """Lanza la aplicación de terminal."""
     print("Lanzando en modo Terminal (TUI)...")
     # Usamos importlib para evitar importaciones circulares y cargar dinámicamente
     import subprocess
-    subprocess.run(["python", "-m", "src.main"])
+    subprocess.run([sys.executable, "-m", "src.main"])
 
 
 

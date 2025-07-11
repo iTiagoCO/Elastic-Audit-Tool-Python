@@ -1,6 +1,7 @@
 # main.py
 import argparse
 import time
+import rich
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.rule import Rule
