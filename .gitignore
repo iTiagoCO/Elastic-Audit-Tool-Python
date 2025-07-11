@@ -7,6 +7,7 @@
 
 # Archivos de log y datos generados por el script
 audit_debug.log
+audit-v4.py
 snapshots/
 
 # Caché de Python y archivos compilados

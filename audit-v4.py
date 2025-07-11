@@ -915,7 +915,7 @@ if __name__ == "__main__":
     parser.add_argument('--report', action='store_true', help='Genera un reporte en formato Markdown y sale.')
     args = parser.parse_args()
 
-    # El modo no interactivo ya está implementado y funciona como se solicitó.
+    # El modo no interactivo ya está implementado y funciona.
     if args.report:
         # Modo no interactivo para bots
         client = ElasticsearchClient(ES_HOST, ES_USER, ES_PASS, VERIFY_SSL)
