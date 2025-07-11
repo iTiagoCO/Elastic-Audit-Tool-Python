@@ -8,3 +8,7 @@ python-dotenv
 dash
 plotly
 dash-bootstrap-components
+fastapi[all]
+pydantic
+httpx
+uvicorn[standard]
