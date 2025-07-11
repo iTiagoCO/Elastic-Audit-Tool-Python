@@ -6,10 +6,16 @@ import sys
 
 def run_tui():
     """Lanza la aplicación de terminal."""
-    print("Lanzando en modo Terminal (TUI)...")
-    # Usamos importlib para evitar importaciones circulares y cargar dinámicamente
+    import sys
     import subprocess
-    subprocess.run([sys.executable, "-m", "src.main"])
+
+    print("Lanzando en modo Terminal (TUI)...")
+    try:
+        subprocess.run([sys.executable, "-m", "src.main"], check=True)
+    except KeyboardInterrupt:
+        print("\n[bold red]TUI interrumpido por el usuario.[/bold red]")
+    except subprocess.CalledProcessError as e:
+        print(f"\n[bold red]❌ Error en ejecución del módulo TUI:[/bold red] {e}")
 
 
 
