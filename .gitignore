@@ -7,7 +7,6 @@
 
 # Archivos de log y datos generados por el script
 audit_debug.log
-audit-v4.py
 snapshots/
 
 # Caché de Python y archivos compilados
@@ -19,3 +18,4 @@ __pycache__/
 # Configuración específica del editor de código (opcional pero recomendado)
 .vscode/
 .idea/
+audit-v4.py
