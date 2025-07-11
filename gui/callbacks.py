@@ -1,117 +1,64 @@
 # gui/callbacks.py
-from dash import Input, Output, html, dcc
+from dash import Input, Output, State, html
 import dash_bootstrap_components as dbc
+import plotly.express as px
+import plotly.graph_objects as go
+import pandas as pd
 import traceback
-
-# Importaciones de la aplicación y de los componentes visuales
 from .app import app
-from .layout import main_layout
 from . import components
-
-# Importaciones del backend de análisis
 from src.client import ElasticsearchClient
 from src.analyzer import ClusterAnalyzer
 from src.config import ES_HOST, ES_USER, ES_PASS, VERIFY_SSL
 
-# --- Instancias Globales para la GUI ---
-# Se crean una sola vez cuando la aplicación se inicia,
-# garantizando que todas las callbacks usen el mismo cliente y analizador.
 try:
-    es_client = ElasticsearchClient(ES_HOST, ES_USER, ES_PASS, VERIFY_SSL)
-    analyzer = ClusterAnalyzer(es_client)
+    analyzer = ClusterAnalyzer(ElasticsearchClient(ES_HOST, ES_USER, ES_PASS, VERIFY_SSL))
     CLIENT_CONNECTED = True
 except Exception as e:
-    es_client = None
     analyzer = None
     CLIENT_CONNECTED = False
-    print(f"ERROR FATAL AL INICIAR: No se pudo crear el cliente de Elasticsearch. {e}")
+    print(f"CRITICAL STARTUP ERROR: {e}")
 
-
-# Asigna el layout (los "planos") a la aplicación
-app.layout = main_layout
-
-# --- Callbacks de la Aplicación ---
-
-@app.callback(
-    Output('header-status', 'children'),
-    Input('url', 'pathname') # Se actualiza en cada cambio de página
-)
+@app.callback(Output('header-status', 'children'), Input('url', 'pathname'))
 def update_header_status(pathname):
-    """Actualiza la cabecera con el estado del clúster."""
-    if not CLIENT_CONNECTED or not es_client:
-        return dbc.Alert("❌ No se pudo conectar a Elasticsearch.", color="danger", className="m-3")
-        
-    try:
-        health = es_client.get("_cluster/health")
-        if not health:
-            raise ValueError("La respuesta de la API de salud está vacía.")
-            
-        status = health.get('status', 'N/A').upper()
-        status_color = {"GREEN": "success", "YELLOW": "warning", "RED": "danger"}.get(status, "secondary")
-        
-        return dbc.Row(
-            [
-                dbc.Col(html.H2("Elastic Pro Audit Console"), width='auto'),
-                dbc.Col(dbc.Badge(status, color=status_color, className="ms-1 fs-5"), width='auto'),
-                dbc.Col(
-                    html.Div(f"Cluster: {health.get('cluster_name')} | Nodos: {health.get('number_of_nodes')}"),
-                    className="text-end text-muted small align-self-end"
-                )
-            ],
-            align="center",
-            className="p-3 mb-2 bg-dark text-white rounded shadow"
-        )
-    except Exception as e:
-        return dbc.Alert(f"Error al obtener salud del clúster: {e}", color="danger", className="m-3")
+    if not CLIENT_CONNECTED: return dbc.Alert("❌ Connection Failed", color="danger")
+    health = analyzer.client.get("_cluster/health") or {}
+    status = health.get('status', 'N/A').upper()
+    color = "success" if status == "GREEN" else "warning" if status == "YELLOW" else "danger"
+    return dbc.Row([
+        dbc.Col(html.H5(f"Cluster: {health.get('cluster_name')}", className="mb-0 text-white-50"), width='auto'),
+        dbc.Col(dbc.Badge(status, color=color, className="ms-2"), width='auto')
+    ], align="center")
 
+@app.callback(Output('page-content', 'children'), Input('url', 'pathname'))
+def display_page(pathname):
+    if not CLIENT_CONNECTED: return dbc.Alert("Cannot connect to Elasticsearch. Check credentials and restart.", color="danger", className="m-4")
+
+    view_map = {
+        '/': components.render_dashboard_general,
+        '/nodes': components.render_node_health_view,
+        '/shard-distribution': components.render_shard_distribution_view,
+        '/slow-tasks': components.render_slow_tasks_view,
+    }
+    try:
+        render_function = view_map.get(pathname, lambda a: components.create_view_panel(f"Página no Encontrada: {pathname}", [dbc.Alert("This view is under construction.", color="info")]))
+        return dbc.Spinner(children=[render_function(analyzer)], color="primary")
+    except Exception as e:
+        return dbc.Alert([html.H4("Error al Renderizar Vista"), html.Pre(traceback.format_exc())], color="danger", className="m-4")
 
 @app.callback(
-    Output('page-content', 'children'),
-    Input('url', 'pathname')
+    Output('shard-treemap-graph', 'figure'),
+    Input('treemap-metric-selector', 'value'),
+    Input('treemap-hierarchy-selector', 'value'),
+    State('shard-data-store', 'data')
 )
-def display_page(pathname):
-    """
-    Enrutador principal: Renderiza la vista correcta y la envuelve en un spinner de carga.
-    """
-    if not CLIENT_CONNECTED or not analyzer:
-         return dbc.Alert("La aplicación no puede funcionar porque no hay conexión a Elasticsearch. Revisa tus variables de entorno y reinicia.", color="danger", className="m-4")
-
-    # El spinner envuelve el contenido. Se muestra mientras el servidor
-    # ejecuta la función get_page_content y renderiza la vista.
-    return dbc.Spinner(
-        children=[get_page_content(pathname)],
-        color="primary",
-        type="grow"
-    )
-
-def get_page_content(pathname):
-    """
-    Función auxiliar que contiene la lógica de enrutamiento y manejo de errores.
-    Llama a la función de renderizado correspondiente desde components.py.
-    """
-    try:
-        if pathname == '/': return components.render_dashboard_general(analyzer)
-        elif pathname == '/nodes': return components.render_node_health_view(analyzer)
-        elif pathname == '/shard-distribution': return components.render_shard_distribution_view(analyzer)
-        elif pathname == '/causality-chain': return components.render_causality_chain_view(analyzer)
-        elif pathname == '/shard-toxicity': return components.render_shard_toxicity_view(analyzer)
-        elif pathname == '/imbalance': return components.render_imbalance_view(analyzer)
-        elif pathname == '/node-load': return components.render_node_load_view(analyzer)
-        elif pathname == '/slow-tasks': return components.render_slow_tasks_view(analyzer)
-        elif pathname == '/templates': return components.render_templates_view(analyzer)
-        elif pathname == '/mapping-explosion': return components.render_mapping_explosion_view(analyzer)
-        elif pathname == '/dusty-shards': return components.render_dusty_shards_view(analyzer)
-        elif pathname == '/config-drift': return components.render_config_drift_view(analyzer)
-        else:
-            return dbc.Alert("Error 404: Página no encontrada.", color="danger", className="m-4")
-    except Exception:
-        # Si algo falla al generar una vista, mostramos el error completo
-        # para facilitar la depuración.
-        tb_str = traceback.format_exc()
-        error_message = html.Div([
-            html.H4("Ocurrió un error al renderizar esta vista", className="alert-heading"),
-            html.Hr(),
-            html.P("El siguiente error impidió que la página se cargara:"),
-            html.Code(tb_str, style={'white-space': 'pre-wrap'})
-        ])
-        return dbc.Alert(error_message, color="danger", className="m-4")
+def update_treemap(metric, hierarchy_str, data):
+    if not data: return go.Figure().update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    df = pd.DataFrame(data)
+    path = hierarchy_str.split(',')
+    unit = "MB" if metric == 'store' else "Docs"
+    fig = px.treemap(df, path=path, values=metric, color=metric, color_continuous_scale='Blues')
+    fig.update_layout(margin=dict(t=25, l=10, r=10, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', font_color='#f0f3f6')
+    # This is the corrected line with the closing quote
+    fig.update_traces(texttemplate="<b>%{label}</b><br>%{value:,.0f} " + unit, hovertemplate='<b>%{label}</b><br>Total: %{customdata[0]:,.0f} ' + unit + '<extra></extra>', customdata=df[[metric]])
+    return fig

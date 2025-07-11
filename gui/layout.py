@@ -3,53 +3,30 @@ from dash import dcc, html
 import dash_bootstrap_components as dbc
 
 def main_layout():
-    """Define la estructura visual completa de la página."""
     sidebar = dbc.Col(
         [
-            html.H3("Elastic Pro", className="display-6"),
-            html.P("Audit Console", className="lead"),
-            html.Hr(),
+            html.H3([html.I(className="fas fa-shield-alt me-2"), "Elastic Pro"], className="text-white my-3"),
+            html.P("Audit Console", className="text-muted"),
+            html.Hr(className="text-muted"),
             dbc.Nav(
                 [
-                    dbc.NavLink("📈 Dashboard General", href="/", active="exact"),
-                    dbc.NavLink("🔬 Salud de Nodos", href="/nodes", active="exact"),
-                    dbc.NavLink("📊 Distribución de Shards", href="/shard-distribution", active="exact"),
-                    html.Hr(),
-                    html.H5("Análisis de Causa Raíz", className="mt-3"),
-                    dbc.NavLink("🔗 Cadenas de Causalidad", href="/causality-chain", active="exact"),
-                    dbc.NavLink("☣️ Toxicidad de Shards", href="/shard-toxicity", active="exact"),
-                    dbc.NavLink("🔀 Desbalance de Shards", href="/imbalance", active="exact"),
-                    dbc.NavLink("⚡ Carga de Nodos", href="/node-load", active="exact"),
-                    dbc.NavLink("⌛ Tareas Lentas", href="/slow-tasks", active="exact"),
-                    html.Hr(),
-                    html.H5("Auditoría de Configuración", className="mt-3"),
-                    dbc.NavLink("📝 Plantillas de Índice", href="/templates", active="exact"),
-                    dbc.NavLink("💥 Explosión de Mapeo", href="/mapping-explosion", active="exact"),
-                    dbc.NavLink("🧹 Shards Vacíos / Polvo", href="/dusty-shards", active="exact"),
-                    dbc.NavLink("🕵️ Deriva de Configuración", href="/config-drift", active="exact"),
+                    dbc.NavLink([html.I(className="fas fa-th-large me-2"), "Dashboard"], href="/", active="exact"),
+                    dbc.NavLink([html.I(className="fas fa-server me-2"), "Salud de Nodos"], href="/nodes", active="exact"),
+                    dbc.NavLink([html.I(className="fas fa-sitemap me-2"), "Distribución"], href="/shard-distribution", active="exact"),
+                    html.P("Análisis de Causa Raíz", className="mt-4 text-muted small text-uppercase fw-bold"),
+                    dbc.NavLink([html.I(className="fas fa-hourglass-half me-2"), "Tareas Lentas"], href="/slow-tasks", active="exact"),
                 ],
-                vertical=True,
-                pills=True,
+                vertical=True, pills=True,
             ),
         ],
-        width=2,
+        width=2, className="sidebar",
     )
-
     content = dbc.Col(
         [
+            html.Div(id='header-status', className="p-3"),
             dcc.Location(id='url', refresh=False),
-            dcc.Store(id='page-load-store'), # Para disparar la carga de la página
-            html.Div(id='page-content')
+            html.Div(id='page-content', className="p-4")
         ],
         width=10,
     )
-
-    return dbc.Container(
-        [
-            html.Div(id='header-status'),
-            html.Hr(),
-            dbc.Row([sidebar, content])
-        ],
-        fluid=True,
-        className="dbc"
-    )
+    return dbc.Container([dbc.Row([sidebar, content], className="g-0")], fluid=True)
