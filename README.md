@@ -97,7 +97,7 @@ python -m src.main
 
 Esto lanzará la interfaz de terminal interactiva donde podrás seleccionar el análisis que deseas ejecutar.
 
-### Modo Reporte (No Interactivo)
+### Modo Reporte (No Interactivo) [FIXING]  Only works in branch api-refactor
 
 Genera un resumen conciso del estado del clúster en formato Markdown con el flag `--report`, ideal para automatizar y enviar a canales de Slack o Teams:
 
