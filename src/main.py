@@ -26,16 +26,20 @@ def main():
     analyzer = ClusterAnalyzer(client)
     
     menu_options = {
-        "1": ("📈 Dashboard General en Vivo", analysis.run_live_dashboard),
-        "2": ("🔬 Dashboard de Causa Raíz (Nodos)", analysis.analyze_node_deep_dive),
-        "3": ("📊 Dashboard de Distribución de Shards", analysis.analyze_shard_distribution_interactive),
-        "4": ("🔀 Análisis de Desbalance de Shards", analysis.analyze_node_index_correlation),
-        "5": ("⚡ Análisis de Carga de Nodos por Shards", analysis.analyze_node_load_correlation),
-        "6": ("⌛ Identificar Tareas de Búsqueda Lentas", analysis.analyze_slow_tasks),
-        "7": ("📝 Diagnóstico de Plantillas de Índice", analysis.analyze_index_templates),
-        "8": ("🧹 Detección de Shards Vacíos / Polvo", analysis.analyze_dusty_shards),
-        "salir": ("🚪 Salir", lambda analyzer: None) # Usamos una lambda para unificar la llamada
-    }
+    "1": ("📈 Dashboard General en Vivo", analysis.run_live_dashboard),
+    "2": ("🔬 Dashboard de Causa Raíz (Nodos)", analysis.analyze_node_deep_dive),
+    "3": ("📊 Dashboard de Distribución de Shards", analysis.analyze_shard_distribution_interactive),
+    "4": ("🔀 Análisis de Desbalance de Shards", analysis.analyze_node_index_correlation),
+    "5": ("⚡ Análisis de Carga de Nodos por Shards", analysis.analyze_node_load_correlation),
+    "6": ("⌛ Identificar Tareas de Búsqueda Lentas", analysis.analyze_slow_tasks),
+    "7.1": ("📝 Diagnóstico de Plantillas de Índice", analysis.analyze_index_templates),
+    "7.2": ("💥 Análisis de Explosión de Mapeo", analysis.analyze_mapping_explosion),
+    "8": ("🧹 Detección de Shards Vacíos / Polvo", analysis.analyze_dusty_shards),
+    "9": ("🕵️  Detección de Deriva de Configuración (Drift)", analysis.analyze_configuration_drift),
+    "10": ("🔗 Diagnóstico por Cadenas de Causalidad", analysis.run_causality_chain_analysis),
+    "11": ("☣️ Análisis de Toxicidad de Shards", analysis.analyze_shard_toxicity),
+    "salir": ("🚪 Salir", lambda analyzer: None)
+}
     
     while True:
         console.rule("[bold cyan]Menú Principal de Análisis Experto[/bold cyan]")

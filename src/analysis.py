@@ -2,6 +2,7 @@
 import time
 import re
 import pandas as pd
+import json
 import fnmatch
 from rich.console import Console
 from rich.live import Live
@@ -19,9 +20,11 @@ from .renderer import (
     render_dashboard_layout, render_thread_pool_panel, render_breaker_panel,
     format_delta
 )
+
 from .config import (
     REFRESH_INTERVAL, LONG_RUNNING_TASK_MINUTES,
-    HIGH_SHARD_COUNT_TEMPLATE_THRESHOLD, DUSTY_SHARD_MB_THRESHOLD
+    HIGH_SHARD_COUNT_TEMPLATE_THRESHOLD, DUSTY_SHARD_MB_THRESHOLD,
+    HEAP_OLD_GEN_THRESHOLD, GC_TIME_THRESHOLD, CPU_USAGE_THRESHOLD
 )
 
 console = Console()
@@ -361,4 +364,289 @@ def analyze_dusty_shards(analyzer: ClusterAnalyzer):
 
     console.print(Columns([Panel(empty_table), Panel(dusty_table)]))
     console.print("\n[italic]Los shards vacíos y el 'polvo de shards' consumen memoria heap de forma ineficiente. Considera usar la API `_shrink` o ajustar las políticas de `rollover` e ILM.[/italic]")
+    Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+
+def analyze_configuration_drift(analyzer: ClusterAnalyzer):
+    """
+    Compara la configuración actual del clúster con los valores por defecto de Elasticsearch
+    para detectar cambios o "derivas" que puedan ser problemáticas.
+    """
+    console.print(Rule("[bold]🕵️ Detección de Deriva de Configuración (Drift)[/bold]"))
+    
+    # Valores por defecto para configuraciones críticas. Un valor de 'None' significa que no se espera que exista.
+    # Esto se podría externalizar a un archivo de configuración YAML/JSON.
+    DEFAULT_SETTINGS = {
+        "persistent": {
+            "cluster.routing.rebalance.enable": "all",
+            "indices.breaker.total.limit": "70%", # Ejemplo, el default real es más complejo
+            "cluster.routing.allocation.enable": "all"
+        },
+        "transient": {
+            # Los transient NUNCA deberían existir en un clúster estable. Su presencia es una alerta.
+        }
+    }
+    
+    settings_data = analyzer.client.get("_cluster/settings")
+    if not settings_data:
+        console.print("[red]No se pudo obtener la configuración del clúster.[/red]")
+        return
+        
+    drifts = []
+    
+    # 1. Chequear configuraciones persistentes contra los defaults esperados
+    persistent_settings = settings_data.get("persistent", {})
+    for key, default_value in DEFAULT_SETTINGS["persistent"].items():
+        current_value = persistent_settings.get(key)
+        if current_value is not None and current_value != default_value:
+            drifts.append(
+                f"-[red]Deriva Persistente Detectada[/red]: "
+                f"El parámetro [cyan]'{key}'[/cyan] tiene el valor [yellow]'{current_value}'[/yellow], "
+                f"pero el valor esperado o por defecto es [green]'{default_value}'[/green]."
+            )
+            
+    # 2. Chequear si existen configuraciones transitorias (lo cual ya es una alerta)
+    transient_settings = settings_data.get("transient", {})
+    if transient_settings:
+        for key, value in transient_settings.items():
+            drifts.append(
+                f"-[bold red]¡Alerta Crítica![/bold red] "
+                f"Se encontró una configuración transitoria para [cyan]'{key}'[/cyan] ([yellow]'{value}'[/yellow]). "
+                f"Esta configuración se perderá al reiniciar el clúster y suele ser una solución temporal olvidada."
+            )
+            
+    if not drifts:
+        console.print("[green]✅ No se detectaron derivas en la configuración crítica del clúster. Todo en orden.[/green]")
+    else:
+        console.print(Panel(
+            "\n".join(drifts),
+            title="[yellow]Resultados del Análisis de Deriva[/yellow]",
+            border_style="yellow",
+            subtitle="Las derivas pueden indicar configuraciones temporales olvidadas que afectan el rendimiento."
+        ))
+        
+    Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+
+
+def analyze_mapping_explosion(analyzer: ClusterAnalyzer):
+    """
+    Analiza los mapeos de los índices para detectar una cantidad excesiva de campos,
+    lo que puede llevar a inestabilidad en el clúster.
+    """
+    console.print(Rule("[bold]💥 Análisis de Explosión de Mapeo[/bold]"))
+    
+    # Umbral de campos. Más de 1000 campos es una advertencia oficial de Elastic.
+    FIELD_COUNT_THRESHOLD = 1000
+    
+    # Obtenemos solo los índices más grandes para no analizar todo el clúster
+    analyzer.fetch_all_data()
+    indices_df = analyzer.indices_df.copy()
+    
+    if indices_df.empty:
+        console.print("[yellow]No hay datos de índices para analizar.[/yellow]")
+        return
+    
+    # Analizamos los 20 índices con más documentos
+    top_indices = indices_df.sort_values(by='docs.count', ascending=False).head(20)
+    
+    table = Table(title="Resultados del Análisis de Mapeo de Campos")
+    table.add_column("Índice", style="cyan")
+    table.add_column("N° de Campos", justify="right", style="magenta")
+    table.add_column("Diagnóstico", style="white")
+
+    with console.status("[yellow]Analizando mapeos...[/yellow]", spinner="dots"):
+        for _, index_row in top_indices.iterrows():
+            index_name = index_row['index']
+            mapping_data = analyzer.client.get(f"{index_name}/_mapping")
+            
+            field_count = 0
+            # Función recursiva para contar los campos anidados
+            def count_fields(mapping):
+                count = 0
+                if 'properties' in mapping:
+                    props = mapping['properties']
+                    count += len(props)
+                    for field, value in props.items():
+                        count += count_fields(value)
+                return count
+
+            if mapping_data and index_name in mapping_data:
+                field_count = count_fields(mapping_data[index_name]['mappings'])
+            
+            if field_count > FIELD_COUNT_THRESHOLD:
+                style = "bold red"
+                diagnostic = f"¡RIESGO ALTO! ({field_count}/{FIELD_COUNT_THRESHOLD})"
+            elif field_count > FIELD_COUNT_THRESHOLD * 0.75:
+                style = "yellow"
+                diagnostic = f"Advertencia ({field_count}/{FIELD_COUNT_THRESHOLD})"
+            else:
+                style = "green"
+                diagnostic = "Saludable"
+
+            table.add_row(index_name, f"[{style}]{field_count}[/{style}]", diagnostic)
+            
+    console.print(table)
+    console.print("\n[italic]Un número excesivo de campos (más de 1000) consume una gran cantidad de memoria en el nodo Máster y puede desestabilizar el clúster.[/italic]")
+    Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+
+
+def run_causality_chain_analysis(analyzer: ClusterAnalyzer):
+    """
+    Motor de diagnóstico que intenta conectar síntomas con causas probables,
+    guiando al usuario a través de una cadena de razonamiento.
+    """
+    console.print(Rule("[bold]🔗 Diagnóstico por Cadenas de Causalidad[/bold]"))
+    
+    with console.status("[yellow]Ejecutando análisis profundo...[/yellow]", spinner="earth"):
+        analyzer.fetch_all_data()
+        time.sleep(2) # Espera para calcular tasas
+        analyzer.fetch_all_data()
+
+    # 1. Punto de partida: ¿Hay algún nodo con uso de HEAP OLD GEN muy alto?
+    nodes_df = analyzer.nodes_df.copy()
+    high_heap_nodes = nodes_df[nodes_df['heap_old_gen_percent'] > HEAP_OLD_GEN_THRESHOLD]
+    
+    if high_heap_nodes.empty:
+        console.print("[green]✅ No se detectaron nodos con presión de memoria crítica (Old Gen). El clúster parece estable en este aspecto.[/green]")
+        Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+        return
+        
+    console.print(f"Se detectaron [bold red]{len(high_heap_nodes)}[/bold red] nodos con alta presión de memoria. Iniciando análisis de causa raíz...\n")
+
+    for _, node in high_heap_nodes.iterrows():
+        node_name = node['node_name']
+        report = [
+            f"Diagnóstico para el nodo: [bold magenta]{node_name}[/bold magenta]",
+            f"  [1] SÍNTOMA: El uso de memoria Heap Old Gen es del [bold red]{node['heap_old_gen_percent']:.1f}%[/bold red], superando el umbral del {HEAP_OLD_GEN_THRESHOLD}%."
+        ]
+        
+        # 2. Investigación: ¿Coincide con actividad alta de Garbage Collection?
+        gc_time = node['gc_time_ms']
+        if gc_time > GC_TIME_THRESHOLD:
+            report.append(f"  [2] CORRELACIÓN: Se observa un tiempo de GC elevado ({gc_time} ms), lo que confirma que el nodo está luchando por liberar memoria.")
+        else:
+            report.append(f"  [2] CORRELACIÓN: El tiempo de GC no es anormalmente alto, la presión puede ser reciente o constante.")
+            
+        # 3. Investigación: ¿Qué shards primarios están en este nodo y qué carga tienen?
+        shards_on_node = analyzer.shards_df[analyzer.shards_df['node'] == node_name]
+        primary_shards = shards_on_node[shards_on_node['prirep'] == 'p']
+        
+        if primary_shards.empty:
+            report.append("  [3] ANÁLISIS DE CARGA: Este nodo no tiene shards primarios. La presión de memoria podría venir de réplicas, búsquedas pesadas o tareas internas.")
+        else:
+            indices_with_rates = analyzer.indices_df[['index', 'write_rate', 'search_rate']]
+            primary_shards_activity = pd.merge(primary_shards, indices_with_rates, on='index', how='left').fillna(0)
+            
+            top_writing_shard = primary_shards_activity.sort_values(by='write_rate', ascending=False).iloc[0]
+            top_searching_shard = primary_shards_activity.sort_values(by='search_rate', ascending=False).iloc[0]
+
+            report.append(f"  [3] ANÁLISIS DE CARGA: El nodo aloja {len(primary_shards)} shards primarios.")
+            if top_writing_shard['write_rate'] > 0:
+                 report.append(f"    - El principal contribuyente a la carga de ESCRITURA es el índice [cyan]{top_writing_shard['index']}[/cyan].")
+            if top_searching_shard['search_rate'] > 0:
+                report.append(f"    - El principal contribuyente a la carga de BÚSQUEDA es el índice [cyan]{top_searching_shard['index']}[/cyan].")
+
+        # 4. Investigación: ¿Qué índices en este nodo están consumiendo más memoria Heap?
+        # (Esto es una simplificación, una implementación real requeriría una API más detallada)
+        top_heap_consumer = analyzer.top_heap_indices.iloc[0] if not analyzer.top_heap_indices.empty else None
+        if top_heap_consumer is not None:
+             report.append(f"  [4] ANÁLISIS DE MEMORIA: A nivel de clúster, el índice [cyan]{top_heap_consumer['index']}[/cyan] es el que más memoria consume ({top_heap_consumer['heap_usage_mb']:.1f} MB). Es probable que sea un factor contribuyente.")
+
+        # 5. Conclusión / Hipótesis
+        conclusion = (
+            "HIPÓTESIS: La alta presión de memoria en este nodo es probablemente causada por una combinación de "
+            "una alta carga de ingesta/búsqueda en los shards primarios que aloja y el alto consumo de memoria de "
+            f"índices como [cyan]{top_heap_consumer['index']}[/cyan]." if top_heap_consumer else "una alta carga de ingesta/búsqueda en los shards primarios que aloja."
+        )
+        report.append(f"\n  [bold green]CONCLUSIÓN PRELIMINAR:[/] {conclusion}")
+
+        console.print(Panel("\n".join(report), title=f"[yellow]Cadena de Causalidad - {node_name}[/yellow]", border_style="yellow"))
+
+    Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+
+
+def analyze_shard_toxicity(analyzer: ClusterAnalyzer):
+    """
+    Identifica "inquilinos tóxicos" correlacionando nodos con alta CPU
+    con las consultas lentas que se ejecutan en ellos.
+    """
+    console.print(Rule("[bold]☣️ Análisis de Toxicidad de Shards e Inquilinos[/bold]"))
+
+    # Paso 1: Realizar el trabajo pesado DENTRO del bloque de estado
+    with console.status("[yellow]Identificando nodos sobrecargados y tareas lentas...[/yellow]"):
+        analyzer.fetch_all_data()
+        nodes_df = analyzer.nodes_df.copy()
+        high_cpu_nodes = nodes_df[nodes_df['cpu_percent'] > CPU_USAGE_THRESHOLD]
+
+        # Solo obtenemos las tareas si hay nodos con CPU alta
+        tasks_data = None
+        if not high_cpu_nodes.empty:
+            tasks_data = analyzer.client.get("_tasks", params={'actions': '*search*', 'detailed': 'true'})
+
+    # Paso 2: Ahora que el spinner desapareció, mostramos los resultados
+    if high_cpu_nodes.empty:
+        console.print(f"[green]✅ No se detectaron nodos con CPU por encima del umbral ({CPU_USAGE_THRESHOLD}%).[/green]")
+        Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+        return
+
+    if not tasks_data or 'nodes' not in tasks_data:
+        console.print("[red]Se detectaron nodos con CPU alta, pero no se pudo obtener la información de las tareas.[/red]")
+        return
+
+    toxic_tenants = []
+
+    # Paso 3: Correlacionar los datos obtenidos
+    for _, node in high_cpu_nodes.iterrows():
+        node_name = node['node_name']
+        node_id = node['node_id']
+
+        if node_id not in tasks_data.get('nodes', {}):
+            continue
+
+        for task_id, task_info in tasks_data['nodes'][node_id]['tasks'].items():
+            description = task_info.get('description', '')
+            tenant_id = "No Extraído"
+            try:
+                if 'body:' in description:
+                    query_body_str = description.split('body:')[1].strip()
+                    query_body = json.loads(query_body_str)
+                    if 'term' in query_body.get('query', {}).get('bool', {}).get('filter', [{}])[0]:
+                       term_filter = query_body['query']['bool']['filter'][0]['term']
+                       for key, value in term_filter.items():
+                           if 'customer_id' in key or 'tenant_id' in key:
+                               tenant_id = str(value)
+                               break
+            except (json.JSONDecodeError, IndexError, KeyError):
+                pass
+
+            toxic_tenants.append({
+                "node_name": node_name,
+                "cpu": node['cpu_percent'],
+                "running_time_s": task_info.get('running_time_in_nanos', 0) / 1e9,
+                "tenant_id": tenant_id,
+                "description": description
+            })
+
+    if not toxic_tenants:
+        console.print("[green]✅ Se detectaron nodos con CPU alta, pero no hay tareas de búsqueda lenta asociadas que puedan ser la causa.[/green]")
+        Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+        return
+
+    table = Table(title="Resultados del Análisis de Inquilinos Tóxicos")
+    table.add_column("Nodo Afectado", style="magenta")
+    table.add_column("CPU%", justify="right", style="red")
+    table.add_column("Inquilino (ID Extraído)", style="yellow")
+    table.add_column("Tiempo Tarea (s)", justify="right")
+    table.add_column("Descripción de la Consulta", max_width=80)
+
+    for tenant in sorted(toxic_tenants, key=lambda x: x['running_time_s'], reverse=True):
+        table.add_row(
+            tenant['node_name'],
+            f"{tenant['cpu']:.0f}%",
+            tenant['tenant_id'],
+            f"{tenant['running_time_s']:.1f}",
+            tenant['description']
+        )
+
+    console.print(table)
+    console.print("\n[italic]Esta tabla muestra consultas lentas en nodos sobrecargados. El 'inquilino' es una extracción heurística de la consulta.[/italic]")
     Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
