@@ -123,6 +123,7 @@ git checkout main
 ```
 
 ### Rama `api-refactor` (Versión con Backend API)
+<img width="980" height="904" alt="image" src="https://github.com/user-attachments/assets/a18feeef-0529-4bad-9ef4-a551c1aa055c" />
 
 La rama `api-refactor` contiene la aplicación reestructurada con un backend FastAPI y un cliente TUI que consume la API. Esta versión es ideal para desarrollo, para extender la herramienta con nuevos frontends (como una interfaz web) o para integrarla con otros sistemas.
 
