@@ -37,88 +37,54 @@ Esta versión de la herramienta es una aplicación de terminal (TUI) autoconteni
 
 ---
 
-## 🚀 Puesta en Marcha
 
-### Prerrequisitos
 
-* Python 3.8+
-* pip
+## 🔧 ¿Qué es esta rama?
 
-### Instalación
+Esta es la versión **estable y autocontenida** de `Elastic Pro Audit Tool`, pensada para técnicos que desean una herramienta ágil y lista para ejecutarse sin necesidad de servidores externos.
 
-1. **Clona el repositorio:**
-
-```bash
-git clone https://github.com/iTiagoCO/Elastic-Audit-Tool-Python.git
-cd Elastic-Audit-Tool-Python
-```
-
-2. **Crea y activa un entorno virtual (recomendado):**
-
-```bash
-python -m venv env
-source env/bin/activate  # En Windows: env\Scripts\activate
-```
-
-3. **Instala las dependencias:**
-
-```bash
-pip install -r requirements.txt
-```
-
-4. **Configura tus credenciales:**
-
-Crea un fichero `.env` en la raíz del proyecto y añade las variables de entorno necesarias. Puedes usar el fichero `.env.example` como plantilla.
+✅ No requiere backend.  
+✅ Se ejecuta desde una sola terminal.  
+✅ Ideal para exploración y diagnóstico en tiempo real.
 
 ---
 
-## ⚙️ Configuración
+## 🚀 Características
 
-La conexión al clúster se define en el archivo `.env`:
+- **Dashboard general en vivo**: Estado del clúster y nodos.
+- **Análisis de shards**: Hotspots, distribución y desbalances.
+- **Tareas lentas y plantillas peligrosas**.
+- **Detección de toxicidad, deriva de configuración y más**.
 
-```env
-# URL base de tu clúster Elasticsearch, incluyendo el puerto.
-ES_HOST="https://tu-cluster.es.us-east-1.aws.found.io:9243"
+---
 
-# Credenciales de autenticación (si son necesarias).
-ES_USER="tu_usuario"
-ES_PASS="tu_contraseña_super_secreta"
+## ⚙️ Instalación
+
+```bash
+git checkout main
+git clone https://github.com/iTiagoCO/Elastic-Audit-Tool-Python.git
+cd Elastic-Audit-Tool-Python
+python -m venv env
+source env/bin/activate  # Windows: env\Scripts\activate
+pip install -r requirements.txt
 ```
 
 ---
 
 ## 🛠️ Uso
 
-Una vez configurado, ejecuta la herramienta desde la raíz del proyecto:
+Lanza la interfaz TUI:
 
 ```bash
 python -m src.main
 ```
 
-Esto lanzará la interfaz de terminal interactiva donde podrás seleccionar el análisis que deseas ejecutar.
-
-### Modo Reporte (No Interactivo) [FIXING]  Only works in branch api-refactor
-
-Genera un resumen conciso del estado del clúster en formato Markdown con el flag `--report`, ideal para automatizar y enviar a canales de Slack o Teams:
-
-```bash
-python -m src.main --report
-```
+Desde aquí puedes navegar entre 12 módulos de análisis.
 
 ---
 
-## 🔀 Flujo de Trabajo y Ramas (Branches)
+## 🧠 ¿Quieres algo más avanzado?
 
-Este repositorio está organizado en dos ramas principales para separar la versión estable de la versión refactorizada con una arquitectura API-first.
-
-### Rama `main` (Versión Estable TUI)
-
-La rama `main` contiene la versión original de la herramienta: una aplicación de terminal (TUI) sencilla y autocontenida. Es la versión recomendada para distribución y uso directo.
-
-Para asegurarte de que estás en esta rama, ejecuta:
-
-```bash
-git checkout main
-```
+Consulta la rama [`api-refactor`](https://github.com/iTiagoCO/Elastic-Audit-Tool-Python/tree/api-refactor) para generación de reportes y análisis automatizado con IA.
 
 ---
