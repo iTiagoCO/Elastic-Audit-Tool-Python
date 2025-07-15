@@ -29,7 +29,7 @@ def run_gui():
 
     from gui.app import app
 
-    # --- LA CORRECCIÓN ESTÁ AQUÍ ---
+
     # Solo abre el navegador si no estamos en un proceso de recarga (reload).
     if not os.environ.get("WERKZEUG_RUN_MAIN"):
         Timer(1, lambda: webbrowser.open("http://127.0.0.1:8050")).start()

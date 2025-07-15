@@ -100,7 +100,6 @@ def analyze_node_index_correlation(analyzer: ClusterAnalyzer) -> dict:
     return {"imbalanced_patterns": results}
 
 def analyze_slow_tasks(analyzer: ClusterAnalyzer) -> dict:
-    # (Código sin cambios, ya era correcto)
     tasks_data = analyzer.client.get("_tasks", params={'actions': '*search*', 'detailed': 'true'})
     if not tasks_data or 'nodes' not in tasks_data: return {"threshold_minutes": LONG_RUNNING_TASK_MINUTES, "tasks": []}
     slow_tasks = [{'node': n.get('name'), 'time_min': t.get('running_time_in_nanos', 0) / 60e9, 'description': t.get('description', 'N/A')}
@@ -163,7 +162,6 @@ def generate_report_data(analyzer: ClusterAnalyzer) -> dict:
 
 
 def analyze_index_templates(analyzer: ClusterAnalyzer) -> dict:
-    # (Código sin cambios, ya era correcto)
     analyzer.fetch_all_data()
     templates_data = analyzer.client.get("_index_template"); indices_df = analyzer.indices_df
     if not templates_data or 'index_templates' not in templates_data or indices_df.empty: return {"templates": []}
@@ -183,7 +181,6 @@ def analyze_index_templates(analyzer: ClusterAnalyzer) -> dict:
     return {"templates": results}
 
 def analyze_mapping_explosion(analyzer: ClusterAnalyzer) -> dict:
-    # (Código sin cambios, ya era correcto)
     FIELD_COUNT_THRESHOLD = 1000; analyzer.fetch_all_data(); indices_df = analyzer.indices_df
     if indices_df.empty: return {"indices": []}
     top_indices = indices_df.sort_values(by='docs.count', ascending=False).head(20)
@@ -201,7 +198,6 @@ def analyze_mapping_explosion(analyzer: ClusterAnalyzer) -> dict:
     return {"indices": results}
 
 def analyze_dusty_shards(analyzer: ClusterAnalyzer) -> dict:
-    # (Código sin cambios, ya era correcto)
     analyzer.fetch_all_data(); shards_df = analyzer.shards_df.copy()
     if shards_df.empty: return {"threshold_mb": DUSTY_SHARD_MB_THRESHOLD, "empty_shards": [], "dusty_shards": []}
     shards_df['docs'] = pd.to_numeric(shards_df['docs'], errors='coerce').fillna(0)
@@ -211,7 +207,6 @@ def analyze_dusty_shards(analyzer: ClusterAnalyzer) -> dict:
     return {"threshold_mb": DUSTY_SHARD_MB_THRESHOLD, "empty_shards": empty.head(10).to_dict('records'), "dusty_shards": dusty.sort_values(by='store').head(10).to_dict('records')}
 
 def analyze_configuration_drift(analyzer: ClusterAnalyzer) -> dict:
-    # (Código sin cambios, ya era correcto)
     DEFAULTS = {"persistent": {"cluster.routing.rebalance.enable": "all", "cluster.routing.allocation.enable": "all"}}
     settings = analyzer.client.get("_cluster/settings")
     if not settings: return {"drifts": ["No se pudo obtener la configuración del clúster."]}

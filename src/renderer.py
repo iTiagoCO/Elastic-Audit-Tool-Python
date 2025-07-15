@@ -19,7 +19,7 @@ from .config import (
 
 console = Console()
 
-# --- Funciones de formato de métricas (sin cambios) ---
+# --- Funciones de formato de métricas ---
 def _format_metric(current_val, prev_val, spike_threshold, higher_is_worse=True):
     if pd.isna(current_val): current_val = 0
     if pd.isna(prev_val): prev_val = current_val
@@ -122,7 +122,6 @@ def _render_actionable_suggestions(data: dict) -> Panel:
     return Panel("\n".join(f"- {s}" for s in suggestions), title="[bold red]Acciones Recomendadas[/bold red]", border_style="red")
 
 def _render_thread_pool_panel(node_stats: dict, prev_node_stats: dict) -> Panel:
-    # (Código sin cambios, ya era correcto)
     tp_table = Table(title="[b]🏊 Thread Pools[/b]", expand=True)
     tp_table.add_column("Pool", style="cyan"); tp_table.add_column("Activas", justify="right"); tp_table.add_column("En Cola", justify="right"); tp_table.add_column("Rechazadas", justify="right")
     for name, stats in sorted(node_stats.get('thread_pool', {}).items()):
@@ -134,7 +133,6 @@ def _render_thread_pool_panel(node_stats: dict, prev_node_stats: dict) -> Panel:
     return Panel(tp_table)
 
 def _render_breaker_panel(node_stats: dict, prev_node_stats: dict) -> Panel:
-    # (Código sin cambios, ya era correcto)
     cb_table = Table(title="[b]🛑 Circuit Breakers[/b]", expand=True)
     cb_table.add_column("Breaker", style="cyan"); cb_table.add_column("Límite (MB)", justify="right"); cb_table.add_column("Usado (MB)", justify="right"); cb_table.add_column("Tripped", justify="right")
     for name, stats in sorted(node_stats.get('breaker', {}).items()):
@@ -174,7 +172,7 @@ def render_shard_distribution(data: dict, group_by: str, sort_by: str) -> Panel:
     for row in summary: table.add_row(row[group_by], str(row['total_shards']), str(row['primaries']), str(row['replicas']), f"{row['total_gb']:.2f}", str(row['nodes_involved']))
     return Panel(table)
 
-# --- Renderers para Análisis Estáticos (Añadidos para corregir el error) ---
+# --- Renderers para Análisis Estáticos ---
 
 def render_node_load_correlation(data: dict):
     node_loads = data.get('node_loads')
@@ -201,7 +199,7 @@ def render_shard_imbalance(data: dict):
     console.print(table)
 
 def render_slow_tasks(data: dict):
-    if not data.get('tasks'): console.print(f"[green]✅ No se detectaron tareas lentas por encima de {data.get('threshold_minutes', 5)} minutos.[/green]"); return
+    if not data.get('tasks'): console.print(f"[green]✅ No se detectaron tareas lentas por encima de {data.get('threshold_minutes', 1)} minutos.[/green]"); return
     table = Table(title=f"Tareas de Búsqueda Lentas (Más de {data['threshold_minutes']} minutos)")
     table.add_column("Nodo", style="cyan"); table.add_column("Tiempo (min)", justify="right", style="yellow"); table.add_column("Descripción", style="white", max_width=80, overflow="fold")
     for task in data['tasks']: table.add_row(task['node'], f"{task['time_min']:.2f}", task['description'])

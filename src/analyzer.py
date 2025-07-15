@@ -5,6 +5,8 @@ import pandas as pd
 from .client import ElasticsearchClient
 
 class ClusterAnalyzer:
+
+    
     """Orquesta la recolección y el procesamiento de datos del clúster."""
     def __init__(self, client: ElasticsearchClient):
         self.client = client
@@ -112,3 +114,6 @@ class ClusterAnalyzer:
                     'rejections': rejections
                 })
         self.nodes_df = pd.DataFrame(node_list)
+
+
+        

@@ -1,21 +1,37 @@
-# Archivos de entorno con secretos y credenciales
-.env
 
-# Entorno virtual de Python
 /env/
-/venv/
+.venv/
+venv/
+ENV/
 
-# Archivos de log y datos generados por el script
-audit_debug.log
-snapshots/
 
-# Caché de Python y archivos compilados
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# Configuración específica del editor de código (opcional pero recomendado)
-.vscode/
-.idea/
+
+.env
+.env.*
+
+
+*.pdf
+Informe_Auditoria_Completa_*.md
+reporte_diagnostico_detallado.json
+analisis_experto_ia.md
+
+
+*.log
+audit_debug.log
+*.db
+*.sqlite3
+
+
+convert-report.py
+src/convert-report.py
+
+
 audit-v4.py
+
+
+.vscode/

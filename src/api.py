@@ -1,6 +1,7 @@
 # src/api.py
 from fastapi import FastAPI, Depends, HTTPException, Query
-import src.analysis as analysis_funcs
+import src.analysis as analysis_funcs 
+import src.reporter as reporter_funcs 
 from .client import ElasticsearchClient
 from .analyzer import ClusterAnalyzer
 from .config import ES_HOST, ES_USER, ES_PASS, VERIFY_SSL
@@ -11,6 +12,8 @@ def get_analyzer():
     client = ElasticsearchClient(ES_HOST, ES_USER, ES_PASS, VERIFY_SSL)
     if not client.cluster_info: raise HTTPException(status_code=503, detail="No se pudo conectar a Elasticsearch.")
     yield ClusterAnalyzer(client)
+
+
 
 # --- Endpoints para Dashboards en Vivo ---
 @app.get("/api/v1/live/dashboard", tags=["Dashboards en Vivo"])
@@ -76,3 +79,18 @@ def ep_get_report_suggestions(analyzer: ClusterAnalyzer = Depends(get_analyzer))
     Genera una lista de sugerencias accionables para un reporte estático.
     """
     return analysis_funcs.generate_report_data(analyzer)
+
+
+# --- ENDPOINT PARA LA AUDITORÍA COMPLETA EN MARKDOWN ---
+@app.post("/api/v1/report/full-audit", tags=["Reportes"])
+def ep_generate_full_audit_report(analyzer: ClusterAnalyzer = Depends(get_analyzer)):
+    return reporter_funcs.generate_full_audit_report(analyzer)
+
+# --- ENDPOINT PARA EL REPORTE DETALLADO EN JSON ---
+@app.post("/api/v1/report/detailed-diagnostic", tags=["Reportes"])
+def ep_generate_detailed_report(
+    duration: int = Query(30, ge=10, le=60),
+    analyze: bool = Query(False),
+    analyzer: ClusterAnalyzer = Depends(get_analyzer)
+):
+    return reporter_funcs.generate_detailed_report(analyzer, duration, analyze)

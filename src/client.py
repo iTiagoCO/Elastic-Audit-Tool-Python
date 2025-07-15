@@ -45,13 +45,12 @@ class ElasticsearchClient:
         try:
             response = requests.get(url, auth=self.auth, verify=self.verify_ssl, headers=HEADERS, params=query_params)
             response.raise_for_status()
-            # Si la respuesta está vacía (posible con filter_path), devuelve un diccionario vacío
             if not response.text:
                 return {}
             return response.json()
         except requests.exceptions.RequestException as e:
             logging.warning(f"Fallo en petición GET a {url}: {e}")
             return None
-        except ValueError: # Captura errores de JSON si la respuesta no es un JSON válido
+        except ValueError: 
             logging.warning(f"Respuesta no es JSON válido desde {url}")
             return None
