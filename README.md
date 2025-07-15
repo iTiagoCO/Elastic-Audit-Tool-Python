@@ -31,7 +31,7 @@ Configura el archivo `.env`:
 
 ```env
 # Elasticsearch
-ES_HOST="https://tu-cluster.es.us-east-1.aws.found.io:9243"
+ES_HOST="https://tu-cluster.es.us-east-1.aws.found.io"
 ES_USER="usuario"
 ES_PASS="clave"
 
@@ -67,7 +67,7 @@ python -m src.main --report
 python -m src.main --detailed-report --duration 15
 
 # Con IA:
-python -m src.main --detailed-report --duration 15 --analyze
+python -m src.main --report --duration 15 --analyze
 ```
 
 ---
