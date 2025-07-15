@@ -37,8 +37,6 @@ Esta versión de la herramienta es una aplicación de terminal (TUI) autoconteni
 
 ---
 
-
-
 ## 🔧 ¿Qué es esta rama?
 
 Esta es la versión **estable y autocontenida** de `Elastic Pro Audit Tool`, pensada para técnicos que desean una herramienta ágil y lista para ejecutarse sin necesidad de servidores externos.
@@ -47,14 +45,6 @@ Esta es la versión **estable y autocontenida** de `Elastic Pro Audit Tool`, pen
 ✅ Se ejecuta desde una sola terminal.  
 ✅ Ideal para exploración y diagnóstico en tiempo real.
 
----
-
-## 🚀 Características
-
-- **Dashboard general en vivo**: Estado del clúster y nodos.
-- **Análisis de shards**: Hotspots, distribución y desbalances.
-- **Tareas lentas y plantillas peligrosas**.
-- **Detección de toxicidad, deriva de configuración y más**.
 
 ---
 
