@@ -31,7 +31,7 @@ def ui_run_live_dashboard():
         with Live(console=console, screen=True, auto_refresh=False, vertical_overflow="visible") as live:
             while True:
                 
-                response = httpx.get(f"{API_BASE_URL}/api/v1/live/dashboard", timeout=10.0)
+                response = httpx.get(f"{API_BASE_URL}/api/v1/live/dashboard", timeout=50.0)
                 response.raise_for_status()
                 live.update(renderer.render_live_dashboard(response.json()), refresh=True)
                 time.sleep(REFRESH_INTERVAL)
