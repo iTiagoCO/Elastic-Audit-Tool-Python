@@ -3,9 +3,7 @@ import os
 import glob
 from markdown_pdf import MarkdownPdf, Section
 
-# --- CAMBIO CLAVE: CSS REDISEÑADO PARA UN ESTILO SOBRIO Y LEGIBLE ---
-# Estilos 'blanco y negro' para un look profesional y sin distracciones.
-# El foco está en la tipografía, el espaciado y los bordes sutiles.
+
 CSS_STYLE = """
 @page {
     size: tabloid;

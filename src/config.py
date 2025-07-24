@@ -42,3 +42,8 @@ SHARD_SKEW_WARN_THRESHOLD = 60
 DUSTY_SHARD_MB_THRESHOLD = 50
 LONG_RUNNING_TASK_MINUTES = 5
 HIGH_SHARD_COUNT_TEMPLATE_THRESHOLD = 5
+
+# --- Umbrales para Análisis Estadístico Avanzado ---
+CORRELATION_THRESHOLD = 0.6  # Coeficiente de Pearson a partir del cual se considera una correlación fuerte
+P_VALUE_THRESHOLD = 0.05     # p-valor por debajo del cual una correlación se considera estadísticamente significativa
+ANOMALY_STD_DEV_FACTOR = 3.0 # Número de desviaciones estándar para considerar un valor como una anomalía

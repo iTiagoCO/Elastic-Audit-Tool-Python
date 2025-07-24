@@ -1,6 +1,6 @@
 # Archivos de entorno con secretos y credenciales
 .env
-
+.vscode
 # Entorno virtual de Python
 /env/
 /venv/

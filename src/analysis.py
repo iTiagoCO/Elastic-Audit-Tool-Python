@@ -14,6 +14,7 @@ from rich.table import Table
 from rich.prompt import Prompt
 from rich.markdown import Markdown
 from rich.text import Text
+from scipy.stats import pearsonr
 
 from .analyzer import ClusterAnalyzer
 from .renderer import (
@@ -21,11 +22,7 @@ from .renderer import (
     format_delta
 )
 
-from .config import (
-    REFRESH_INTERVAL, LONG_RUNNING_TASK_MINUTES,
-    HIGH_SHARD_COUNT_TEMPLATE_THRESHOLD, DUSTY_SHARD_MB_THRESHOLD,
-    HEAP_OLD_GEN_THRESHOLD, GC_TIME_THRESHOLD, CPU_USAGE_THRESHOLD
-)
+from .config import *
 
 console = Console()
 
@@ -34,7 +31,7 @@ console = Console()
 def run_live_dashboard(analyzer: ClusterAnalyzer):
     """Ejecuta el dashboard principal en modo de actualización en vivo."""
     try:
-        with Live(console=console, screen=True, auto_refresh=False) as live:
+        with Live(console=console, screen=True, auto_refresh=False, vertical_overflow="visible") as live:
             while True:
                 analyzer.fetch_all_data()
                 dashboard = render_dashboard_layout(analyzer)
@@ -46,7 +43,7 @@ def run_live_dashboard(analyzer: ClusterAnalyzer):
 def analyze_node_deep_dive(analyzer: ClusterAnalyzer):
     """Ejecuta un dashboard en vivo para todos los nodos, mostrando un desglose detallado."""
     try:
-        with Live(console=console, screen=True, auto_refresh=False) as live:
+        with Live(console=console, screen=True, auto_refresh=False, vertical_overflow="visible") as live:
             while True:
                 analyzer.fetch_all_data(for_deep_dive=True)
                 layout = Layout(name="deep_dive_root")
@@ -62,8 +59,13 @@ def analyze_node_deep_dive(analyzer: ClusterAnalyzer):
                     node_layout = Layout(name=node_name)
                     node_layout.split_row(tp_panel, cb_panel)
                     node_panels.append(Panel(node_layout, title=f"[b cyan]Nodo: {node_name}[/b cyan]", border_style="magenta"))
-                layout.split_column(*node_panels)
-                live.update(layout, refresh=True)
+                
+                if not node_panels:
+                     live.update(Panel("[yellow]Esperando datos de nodos...[/yellow]"), refresh=True)
+                else:
+                    layout.split_column(*node_panels)
+                    live.update(layout, refresh=True)
+                
                 time.sleep(REFRESH_INTERVAL)
     except KeyboardInterrupt:
         console.print(f"\n[bold]Finalizando diagnóstico profundo...[/bold]")
@@ -77,62 +79,60 @@ def analyze_shard_distribution_interactive(analyzer: ClusterAnalyzer):
         console.print("[red]No hay datos de shards disponibles para el análisis.[/red]")
         return
         
-    analysis_type = Prompt.ask("¿Analizar por [1] Patrón de Índice o [2] Índice Individual?", choices=["1", "2"], default="1")
-    sort_choices = {"1": ("Total Shards", "total_shards"), "2": ("Tamaño Total (GB)", "total_gb"), "3": ("Primarios", "primaries"), "4": ("Nodos Involucrados", "nodes_involved")}
-    console.print("\nElige un criterio para ordenar:")
-    for key, (desc, _) in sort_choices.items(): console.print(f"  [bold]{key}[/bold]: {desc}")
-    sort_option = Prompt.ask("Opción de ordenamiento", choices=list(sort_choices.keys()), default="1")
-    sort_by_column = sort_choices[sort_option][1]
-    group_by_col = 'pattern' if analysis_type == '1' else 'index'
+    group_by_col = 'pattern'
     
-    try:
-        with Live(console=console, screen=True, auto_refresh=False) as live:
-            while True:
-                analyzer.fetch_all_data()
-                shards_df = analyzer.shards_df.copy()
-                shards_df['pattern'] = shards_df['index'].apply(lambda x: re.sub(r'\d{4}[-.]\d{2}[-.]\d{2}|-\d{6}', '-*', x))
-                shards_df.loc[:, 'store'] = pd.to_numeric(shards_df['store'], errors='coerce').fillna(0)
-                summary_df = shards_df.groupby(group_by_col).agg(total_shards=('shard', 'count'), primaries=('prirep', lambda x: (x == 'p').sum()), replicas=('prirep', lambda x: (x == 'r').sum()), total_gb=('store', lambda x: x.sum() / 1024), nodes_involved=('node', 'nunique')).reset_index()
-                sorted_df = summary_df.sort_values(by=sort_by_column, ascending=False)
-                table = Table(title=f"Distribución de Shards por {'Patrón' if analysis_type == '1' else 'Índice'} (ordenado por {sort_choices[sort_option][0]})")
-                table.add_column(group_by_col.capitalize(), style="cyan", max_width=50)
-                table.add_column("Total Shards", justify="right")
-                table.add_column("Primarios", justify="right")
-                table.add_column("Réplicas", justify="right")
-                table.add_column("Tamaño (GB)", justify="right")
-                table.add_column("Nodos", justify="right")
-                for _, row in sorted_df.head(20).iterrows():
-                    table.add_row(row[group_by_col], str(row['total_shards']), str(row['primaries']), str(row['replicas']), f"{row['total_gb']:.2f}", str(row['nodes_involved']))
-                live.update(Panel(table), refresh=True)
-                time.sleep(REFRESH_INTERVAL)
-    except KeyboardInterrupt:
-        console.print("\n[bold]Volviendo al menú de análisis...[/bold]")
+    with console.status("[yellow]Analizando distribución de shards...[/yellow]"):
+        shards_df = analyzer.shards_df.copy()
+        shards_df['pattern'] = shards_df['index'].apply(lambda x: re.sub(r'\d{4}[-.]\d{2}[-.]\d{2}|-\d{6}', '-*', x))
+        shards_df['store_gb'] = shards_df['store'] / 1024
+        
+        summary_df = shards_df.groupby(group_by_col).agg(
+            total_shards=('shard', 'count'),
+            primaries=('prirep', lambda x: (x == 'p').sum()),
+            replicas=('prirep', lambda x: (x == 'r').sum()),
+            total_gb=('store_gb', 'sum'),
+            nodes_involved=('node', 'nunique')
+        ).reset_index()
+        
+        sorted_df = summary_df.sort_values(by="total_shards", ascending=False)
+        table = Table(title=f"Distribución de Shards por Patrón (ordenado por Total Shards)")
+        table.add_column("Patrón", style="cyan", max_width=50)
+        table.add_column("Total Shards", justify="right")
+        table.add_column("Primarios", justify="right")
+        table.add_column("Réplicas", justify="right")
+        table.add_column("Tamaño (GB)", justify="right")
+        table.add_column("Nodos", justify="right")
+        
+        for _, row in sorted_df.head(25).iterrows():
+            table.add_row(row[group_by_col], str(row['total_shards']), str(row['primaries']), str(row['replicas']), f"{row['total_gb']:.2f}", str(row['nodes_involved']))
+            
+    console.print(Panel(table))
+    Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
 
 # --- Funciones de Análisis Experto ---
 
 def analyze_node_load_correlation(analyzer: ClusterAnalyzer):
     """Correlaciona la carga de CPU y memoria de un nodo con la carga de escritura/lectura generada por sus shards."""
-    console.print(Rule("[bold]Análisis de Carga de Nodos por Actividad de Shards[/bold]"))
+    console.print(Rule("[bold]⚡ Análisis Avanzado de Carga de Nodos y Actividad de Shards[/bold]"))
     console.print("[yellow]Capturando métricas para calcular tasas de actividad...[/yellow]")
     analyzer.fetch_all_data()
     time.sleep(REFRESH_INTERVAL)
     analyzer.fetch_all_data()
 
-    nodes_df = analyzer.nodes_df.copy()
-    shards_df = analyzer.shards_df.copy()
-    indices_df = analyzer.indices_df.copy()
-    previous_indices_df = analyzer.previous_indices_df.copy()
+    nodes_df, shards_df, indices_df, prev_indices_df = analyzer.nodes_df.copy(), analyzer.shards_df.copy(), analyzer.indices_df.copy(), analyzer.previous_indices_df.copy()
 
-    if any(df.empty for df in [nodes_df, shards_df, indices_df, previous_indices_df]):
+    if any(df.empty for df in [nodes_df, shards_df, indices_df, prev_indices_df]):
         console.print("[red]No se pudieron obtener datos completos para el análisis de carga.[/red]")
         return
 
-    merged_indices = pd.merge(indices_df, previous_indices_df[['index', 'indexing_total', 'search_total']], on='index', how='left', suffixes=('', '_prev'))
-    merged_indices['indexing_total_prev'] = merged_indices['indexing_total_prev'].fillna(merged_indices['indexing_total'])
-    merged_indices['search_total_prev'] = merged_indices['search_total_prev'].fillna(merged_indices['search_total'])
-    time_delta = REFRESH_INTERVAL if REFRESH_INTERVAL > 0 else 1
-    indices_df['write_rate'] = (merged_indices['indexing_total'] - merged_indices['indexing_total_prev']) / time_delta
-    indices_df['search_rate'] = (merged_indices['search_total'] - merged_indices['search_total_prev']) / time_delta
+    merged_indices = pd.merge(indices_df, prev_indices_df[['index', 'indexing.index_total', 'search.query_total']], on='index', how='left', suffixes=('', '_prev'))
+    merged_indices.fillna({'indexing.index_total_prev': merged_indices['indexing.index_total'], 'search.query_total_prev': merged_indices['search.query_total']}, inplace=True)
+    
+    time_delta = (analyzer.last_fetch_time - analyzer.previous_nodes_df.attrs.get('fetch_time', analyzer.last_fetch_time)).total_seconds()
+    if time_delta == 0: time_delta = REFRESH_INTERVAL
+
+    indices_df['write_rate'] = (merged_indices['indexing.index_total'] - merged_indices['indexing.index_total_prev']) / time_delta
+    indices_df['search_rate'] = (merged_indices['search.query_total'] - merged_indices['search.query_total_prev']) / time_delta
 
     shard_activity_df = pd.merge(shards_df, indices_df[['index', 'write_rate', 'search_rate']], on='index', how='left').fillna(0)
     
@@ -141,29 +141,39 @@ def analyze_node_load_correlation(analyzer: ClusterAnalyzer):
         node_name = node_row['node_name']
         shards_on_node = shard_activity_df[shard_activity_df['node'] == node_name]
         primary_shards = shards_on_node[shards_on_node['prirep'] == 'p']
-        write_load = primary_shards['write_rate'].sum()
-        search_load = shards_on_node['search_rate'].sum()
+        write_load = primary_shards['write_rate'].sum() # La carga de escritura solo la soportan los primarios
+        search_load = shards_on_node['search_rate'].sum() # La carga de búsqueda la soportan todos
         node_loads.append({
             'Nodo': node_name, 'CPU %': node_row['cpu_percent'], 'Heap %': node_row['heap_percent'],
-            'Primarios': len(primary_shards), 'Total Shards': len(shards_on_node),
             'Carga Escritura (docs/s)': write_load, 'Carga Búsqueda (req/s)': search_load
         })
     
-    load_df = pd.DataFrame(node_loads).sort_values(by='CPU %', ascending=False)
+    load_df = pd.DataFrame(node_loads)
     table = Table(title="Correlación de Carga de Nodos y Actividad de Shards")
-    for col in load_df.columns:
+    for col in ['Nodo', 'CPU %', 'Heap %', 'Carga Escritura (docs/s)', 'Carga Búsqueda (req/s)']:
         table.add_column(col, justify="right", style="cyan" if col == 'Nodo' else "white")
     
     for _, row in load_df.iterrows():
-        table.add_row(
-            row['Nodo'], f"{row['CPU %']:.0f}", f"{row['Heap %']:.0f}", str(row['Primarios']),
-            str(row['Total Shards']), f"[green]{row['Carga Escritura (docs/s)']:.1f}[/green]",
-            f"[yellow]{row['Carga Búsqueda (req/s)']:.1f}[/yellow]"
-        )
+        table.add_row(row['Nodo'], f"{row['CPU %']:.0f}", f"{row['Heap %']:.0f}", f"[green]{row['Carga Escritura (docs/s)']:.1f}[/green]", f"[yellow]{row['Carga Búsqueda (req/s)']:.1f}[/yellow]")
     
     console.print(table)
-    console.print("\n[italic]Esta tabla te ayuda a ver si los nodos con alta CPU/Heap son los que realmente procesan más escrituras o búsquedas.[/italic]")
+    
+    # Análisis de Correlación Estadística
+    if len(load_df) > 2:
+        load_df['total_load'] = load_df['Carga Escritura (docs/s)'] + load_df['Carga Búsqueda (req/s)']
+        corr_cpu, p_cpu = pearsonr(load_df['total_load'], load_df['CPU %'])
+        
+        corr_style = "bold red" if abs(corr_cpu) > CORRELATION_THRESHOLD and p_cpu < P_VALUE_THRESHOLD else "white"
+        
+        console.print(Rule("[bold]Análisis de Correlación Estadística (Pearson R²)[/bold]"))
+        console.print(f" - Correlación entre Carga Total (docs/s + req/s) y CPU %: [{corr_style}]{corr_cpu:.3f}[/{corr_style}] (p-valor: {p_cpu:.3f})")
+        if abs(corr_cpu) > CORRELATION_THRESHOLD and p_cpu < P_VALUE_THRESHOLD:
+            console.print(f"[green]Diagnóstico:[/] Existe una correlación [bold]estadísticamente significativa[/bold]. El {corr_cpu**2:.1%} de la variación del uso de CPU se puede explicar por la carga de búsqueda y escritura.")
+        else:
+            console.print("[yellow]Diagnóstico:[/] La correlación no es fuerte. El alto uso de CPU puede deberse a otros factores (GC, tareas de sistema, mapeos complejos, etc.).")
+
     Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+
 
 def analyze_node_index_correlation(analyzer: ClusterAnalyzer):
     """Analiza y muestra el desbalance de shards primarios, enriquecido con métricas de actividad."""
@@ -179,12 +189,23 @@ def analyze_node_index_correlation(analyzer: ClusterAnalyzer):
         console.print("[red]No se pudieron obtener suficientes datos para el análisis de actividad.[/red]")
         return
     
-    merged_df = pd.merge(indices_df, previous_indices_df[['index', 'indexing_total', 'search_total']], on='index', how='left', suffixes=('', '_prev'))
-    merged_df['indexing_total_prev'] = merged_df['indexing_total_prev'].fillna(merged_df['indexing_total'])
-    merged_df['search_total_prev'] = merged_df['search_total_prev'].fillna(merged_df['search_total'])
-    time_delta = REFRESH_INTERVAL if REFRESH_INTERVAL > 0 else 1
-    indices_df['write_rate'] = (merged_df['indexing_total'] - merged_df['indexing_total_prev']) / time_delta
-    indices_df['search_rate'] = (merged_df['search_total'] - merged_df['search_total_prev']) / time_delta
+    # CORRECCIÓN: Usar los nombres de columna correctos: 'indexing.index_total' y 'search.query_total'
+    merged_df = pd.merge(
+        indices_df,
+        previous_indices_df[['index', 'indexing.index_total', 'search.query_total']],
+        on='index',
+        how='left',
+        suffixes=('', '_prev')
+    )
+    
+    merged_df['indexing.index_total_prev'] = merged_df['indexing.index_total_prev'].fillna(merged_df['indexing.index_total'])
+    merged_df['search.query_total_prev'] = merged_df['search.query_total_prev'].fillna(merged_df['search.query_total'])
+    
+    time_delta = (analyzer.last_fetch_time - analyzer.previous_fetch_time).total_seconds() if analyzer.previous_fetch_time else REFRESH_INTERVAL
+    if time_delta <= 0: time_delta = REFRESH_INTERVAL
+    
+    indices_df['write_rate'] = (merged_df['indexing.index_total'] - merged_df['indexing.index_total_prev']) / time_delta
+    indices_df['search_rate'] = (merged_df['search.query_total'] - merged_df['search.query_total_prev']) / time_delta
     
     primary_shards = shards_df[shards_df['prirep'] == 'p'].copy()
     primary_shards['pattern'] = primary_shards['index'].apply(lambda x: re.sub(r'\d{4}[-.]\d{2}[-.]\d{2}|-\d{6}', '-*', x))
@@ -215,17 +236,14 @@ def analyze_node_index_correlation(analyzer: ClusterAnalyzer):
         pattern, std_dev, write_rate, search_rate = pattern_row['pattern'], pattern_row['std_dev'], pattern_row.get('write_rate', 0), pattern_row.get('search_rate', 0)
         nodes_for_pattern = shard_counts[shard_counts['pattern'] == pattern].sort_values(by='shard_count', ascending=False)
         table.add_section()
-        for i, node_row in enumerate(nodes_for_pattern.iterrows()):
-            node_name, shard_count = node_row[1]['node'], node_row[1]['shard_count']
+        for i, (_, node_row) in enumerate(nodes_for_pattern.iterrows()):
+            node_name, shard_count = node_row['node'], node_row['shard_count']
             style = "on red" if shard_count == nodes_for_pattern['shard_count'].max() and len(nodes_for_pattern) > 1 else ""
             if i == 0:
                 table.add_row(pattern, f"{std_dev:.2f}", f"{write_rate:.1f}", f"{search_rate:.1f}", Text(node_name, style=style), Text(str(shard_count), style=style))
             else:
                 table.add_row("", "", "", "", Text(node_name, style=style), Text(str(shard_count), style=style))
     console.print(table)
-    
-    info_text = "..." # El texto de la guía de diagnóstico se puede mantener aquí.
-    console.print(Panel(Markdown(info_text), title="[bold cyan]Guía de Diagnóstico de Desbalance[/bold cyan]", border_style="cyan"))
     Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
 
 def analyze_slow_tasks(analyzer: ClusterAnalyzer):
@@ -564,6 +582,25 @@ def run_causality_chain_analysis(analyzer: ClusterAnalyzer):
     Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
 
 
+def analyze_hot_threads(analyzer: ClusterAnalyzer):
+    """Captura y muestra los hot threads de todos los nodos."""
+    console.print(Rule("[bold]🔥 Análisis de Hot Threads[/bold]"))
+
+    with console.status("[yellow]Solicitando análisis de hot threads a los nodos... (puede tardar unos segundos)[/yellow]"):
+        hot_threads_data = analyzer.client.get("_nodes/hot_threads?threads=10&type=cpu")
+
+    if not hot_threads_data or 'hot_threads' not in hot_threads_data:
+        console.print("[red]No se pudo obtener la información de hot threads.[/red]")
+        return
+
+    for node_info in hot_threads_data['hot_threads']:
+        node_name = node_info.get('node_name', 'Desconocido')
+        panel_content = Text(node_info.get('threads', 'No hay threads calientes.'), overflow="fold")
+        console.print(Panel(panel_content, title=f"[bold cyan]Nodo: {node_name}[/bold cyan]", border_style="red"))
+
+    console.print("\n[italic]El análisis de 'hot threads' muestra qué hilos de Java están consumiendo más CPU. Es clave para identificar la causa exacta de un pico de uso.[/italic]")
+    Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+
 def analyze_shard_toxicity(analyzer: ClusterAnalyzer):
     """
     Identifica "inquilinos tóxicos" correlacionando nodos con alta CPU
@@ -649,4 +686,127 @@ def analyze_shard_toxicity(analyzer: ClusterAnalyzer):
 
     console.print(table)
     console.print("\n[italic]Esta tabla muestra consultas lentas en nodos sobrecargados. El 'inquilino' es una extracción heurística de la consulta.[/italic]")
+    Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+
+
+def run_anomaly_detection_analysis(analyzer: ClusterAnalyzer):
+    """Analiza datos históricos para detectar anomalías en el estado actual."""
+    console.print(Rule("[bold]📈 Detección de Anomalías Estadísticas (vs. últimas 24h)[/bold]"))
+    
+    with console.status("[yellow]Cargando y analizando datos históricos...[/yellow]"):
+        historical_df = analyzer.load_historical_snapshots(window_hours=24)
+    
+    if historical_df.empty or len(historical_df) < 10:
+        console.print("[yellow]No hay suficientes datos históricos para un análisis de anomalías. Ejecuta la herramienta periódicamente.[/yellow]")
+        Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+        return
+        
+    if analyzer.nodes_df.empty:
+        analyzer.fetch_all_data()
+    current_df = analyzer.nodes_df
+    
+    metrics_to_check = ['cpu_percent', 'heap_percent', 'load_1m']
+    
+    table = Table(title="Informe de Anomalías por Nodo", expand=True)
+    table.add_column("Nodo", style="cyan")
+    table.add_column("Métrica", style="yellow")
+    table.add_column("Valor Actual", justify="right", style="green")
+    table.add_column("Media Histórica", justify="right", style="blue")
+    table.add_column("Desv. Estándar", justify="right", style="magenta")
+    table.add_column("Anomalía", justify="center")
+
+    found_anomalies = False
+    for _, current_node in current_df.iterrows():
+        node_name = current_node['node_name']
+       
+        node_historical_df = historical_df[historical_df['node_name'] == node_name]
+        
+        if node_historical_df.empty: continue
+            
+        for metric in metrics_to_check:
+            mean = node_historical_df[metric].mean()
+            std = node_historical_df[metric].std()
+            current_value = current_node[metric]
+            
+            if std > 0 and abs(current_value - mean) > ANOMALY_STD_DEV_FACTOR * std:
+                found_anomalies = True
+                anomaly_text = Text(f"🚨 ALTA (> {ANOMALY_STD_DEV_FACTOR}σ)", style="bold red")
+                table.add_row(node_name, metric, f"{current_value:.2f}", f"{mean:.2f}", f"{std:.2f}", anomaly_text)
+    
+    if found_anomalies:
+        console.print(table)
+        console.print("\n[italic red]Se detectaron anomalías donde los valores actuales se desvían significativamente del comportamiento normal registrado.[/italic red]")
+    else:
+        console.print(Panel("[green]✅ No se detectaron anomalías significativas en el estado actual del clúster comparado con su historial reciente.[/green]"))
+        
+    Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+
+def analyze_hot_threads(analyzer: ClusterAnalyzer):
+    """Captura y muestra los hot threads de todos los nodos, parseando el formato de texto."""
+    console.print(Rule("[bold]🔥 Análisis de Hot Threads[/bold]"))
+
+    with console.status("[yellow]Solicitando análisis de hot threads a los nodos... (puede tardar unos segundos)[/yellow]"):
+        hot_threads_data = analyzer.client.get_hot_threads()
+
+    if not hot_threads_data:
+        console.print("[red]No se pudo obtener la información de hot threads.[/red]")
+        return
+
+    # El texto viene formateado como "::: Node Name :::\n ... stack trace ... \n::: Next Node :::"
+    nodes_raw_data = hot_threads_data.strip().split(":::")
+    
+    for node_raw in nodes_raw_data:
+        if not node_raw.strip(): continue
+        
+        lines = node_raw.strip().split('\n')
+        # La primera línea contiene el nombre del nodo y otra información
+        node_name_line = lines[0]
+        # El resto es el stack trace
+        panel_content = "\n".join(lines[1:])
+        
+        console.print(Panel(
+            Text(panel_content, overflow="fold"),
+            title=f"[bold cyan]{node_name_line.strip()}[/bold cyan]",
+            border_style="red",
+            subtitle="[italic]Consumo de CPU por Hilo Java[/italic]"
+        ))
+            
+    console.print("\n[italic]El análisis de 'hot threads' muestra qué hilos de Java están consumiendo más CPU. Es clave para identificar la causa exacta de un pico de uso (búsquedas pesadas, ingesta masiva, etc.).[/italic]")
+    Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
+
+
+def analyze_slow_tasks(analyzer: ClusterAnalyzer):
+    """Identifica tareas de búsqueda lentas que se están ejecutando en el clúster."""
+    console.print(Rule("[bold]⌛ Identificación de Tareas de Búsqueda Lentas[/bold]"))
+    
+    with console.status("[yellow]Consultando tareas activas...[/yellow]"):
+        tasks_data = analyzer.client.get_tasks()
+        
+    if not tasks_data or 'nodes' not in tasks_data:
+        console.print("[red]No se pudo obtener información de tareas.[/red]")
+        return
+
+    slow_tasks = []
+    for node_id, node_info in tasks_data['nodes'].items():
+        for task_id, task_info in node_info.get('tasks', {}).items():
+            running_time_min = task_info.get('running_time_in_nanos', 0) / 60e9
+            if running_time_min > LONG_RUNNING_TASK_MINUTES:
+                slow_tasks.append({
+                    'node': node_info.get('name', 'N/A'),
+                    'time_min': running_time_min,
+                    'description': task_info.get('description', 'N/A')
+                })
+    
+    if not slow_tasks:
+        console.print(f"[green]✅ No se detectaron tareas de búsqueda lentas por encima de {LONG_RUNNING_TASK_MINUTES} minutos.[/green]")
+    else:
+        table = Table(title=f"Tareas de Búsqueda Lentas (Más de {LONG_RUNNING_TASK_MINUTES} minutos)")
+        table.add_column("Nodo", style="cyan")
+        table.add_column("Tiempo (min)", justify="right", style="yellow")
+        table.add_column("Descripción", style="white")
+
+        for task in sorted(slow_tasks, key=lambda x: x['time_min'], reverse=True):
+            table.add_row(task['node'], f"{task['time_min']:.2f}", task['description'])
+        console.print(table)
+        
     Prompt.ask("\n[bold]Presiona Enter para volver al menú...[/bold]")
